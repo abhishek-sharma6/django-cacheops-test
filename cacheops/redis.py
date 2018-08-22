@@ -63,7 +63,7 @@ try:
         else:
             redis_replicas = []
             for replica in redis_replica_conf:
-                redis_replicas.append(**replica)
+                redis_replicas.append(redis.StrictRedis.from_url(**replica))
 except AttributeError as err:
     pass
 
