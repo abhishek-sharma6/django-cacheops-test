@@ -21,6 +21,7 @@ class Defaults(namespace):
     CACHEOPS_CLIENT_CLASS = None
     CACHEOPS_DEGRADE_ON_FAILURE = False
     CACHEOPS_SENTINEL = {}
+    CACHEOPS_REDIS_REPLICA = None
 
     FILE_CACHE_DIR = '/tmp/cacheops_file_cache'
     FILE_CACHE_TIMEOUT = 60*60*24*30
