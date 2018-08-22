@@ -49,7 +49,7 @@ class SafeRedis(redis.StrictRedis):
             return super(SafeRedis, self).execute_command(*args, **options)
 
 
-CacheopsRedis = SafeRedis if settings.CACHEOPS_DEGRADE_ON_FAILURE else redis.StrictRedis
+CacheopsRedis = SafeRedis
 
 redis_replicas = None
 try:
@@ -61,7 +61,9 @@ try:
         if isinstance(redis_replica_conf, six.string_types):
             redis_replicas = map(redis.StrictRedis.from_url, redis_replica_conf.split(','))
         else:
-            redis_replicas = map(redis.StrictRedis.from_url, redis_replica_conf)
+            redis_replicas = []
+            for replica in redis_replica_conf:
+                redis_replicas.append(**replica)
 except AttributeError as err:
     pass
 
