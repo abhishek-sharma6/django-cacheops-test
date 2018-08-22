@@ -1,16 +1,19 @@
 from __future__ import absolute_import
+
+import random
+import sys
+import traceback
 import warnings
 from contextlib import contextmanager
-import six
 
+import redis
+import six
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
-
 from funcy import decorator, identity, memoize, LazyObject
-import redis
 from redis.sentinel import Sentinel
-from .conf import settings
 
+from .conf import settings
 
 if settings.CACHEOPS_DEGRADE_ON_FAILURE:
     @decorator
@@ -21,15 +24,59 @@ if settings.CACHEOPS_DEGRADE_ON_FAILURE:
             warnings.warn("The cacheops cache is unreachable! Error: %s" % e, RuntimeWarning)
         except redis.TimeoutError as e:
             warnings.warn("The cacheops cache timed out! Error: %s" % e, RuntimeWarning)
+        except Exception as e:
+            warnings.warn("".join(traceback.format_exception(*sys.exc_info())))
 else:
     handle_connection_failure = identity
-
 
 LOCK_TIMEOUT = 60
 
 
-class CacheopsRedis(redis.StrictRedis):
+class SafeRedis(redis.StrictRedis):
     get = handle_connection_failure(redis.StrictRedis.get)
+    """ Handles failover of AWS elasticache
+    """
+
+    def execute_command(self, *args, **options):
+        try:
+            return super(SafeRedis, self).execute_command(*args, **options)
+        except redis.ResponseError as e:
+            if "READONLY" not in e.message:
+                raise
+            connection = self.connection_pool.get_connection(args[0], **options)
+            connection.disconnect()
+            warnings.warn("Primary probably failed over, reconnecting")
+            return super(SafeRedis, self).execute_command(*args, **options)
+
+
+CacheopsRedis = SafeRedis if settings.CACHEOPS_DEGRADE_ON_FAILURE else redis.StrictRedis
+
+redis_replicas = None
+try:
+    # the conf could be a list of string
+    # list would look like: ["redis://cache-001:6379/1", "redis://cache-002:6379/2"]
+    # string would be: "redis://cache-001:6379/1,redis://cache-002:6379/2"
+    redis_replica_conf = settings.CACHEOPS_REDIS_REPLICA
+    if redis_replica_conf:
+        if isinstance(redis_replica_conf, six.string_types):
+            redis_replicas = map(redis.StrictRedis.from_url, redis_replica_conf.split(','))
+        else:
+            redis_replicas = map(redis.StrictRedis.from_url, redis_replica_conf)
+except AttributeError as err:
+    pass
+
+
+class CacheopsRedis(CacheopsRedis):
+    super_get = handle_connection_failure(CacheopsRedis.get)
+
+    def get(self, *args, **kwargs):
+        if redis_replicas:
+            try:
+                redis_replica = random.choice(redis_replicas)
+                return redis_replica.get(*args, **kwargs)
+            except redis.ConnectionError:
+                pass
+        return self.super_get(*args, **kwargs)
 
     @contextmanager
     def getting(self, key, lock=False):
@@ -114,6 +161,7 @@ import re
 import os.path
 
 STRIP_RE = re.compile(r'TOSTRIP.*/TOSTRIP', re.S)
+
 
 @memoize
 def load_script(name, strip=False):
