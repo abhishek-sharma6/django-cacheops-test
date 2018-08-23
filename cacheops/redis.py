@@ -49,7 +49,7 @@ class SafeRedis(redis.StrictRedis):
             return super(SafeRedis, self).execute_command(*args, **options)
 
 
-CacheopsRedis = SafeRedis
+# CacheopsRedis = SafeRedis
 
 redis_replicas = None
 try:
@@ -68,8 +68,8 @@ except AttributeError as err:
     pass
 
 
-class CacheopsRedis(CacheopsRedis):
-    super_get = handle_connection_failure(CacheopsRedis.get)
+class CacheopsRedis(SafeRedis):
+    super_get = handle_connection_failure(SafeRedis.get)
 
     def get(self, *args, **kwargs):
         if redis_replicas:
