@@ -80,6 +80,9 @@ class CacheopsRedis(SafeRedis):
                 pass
         return self.super_get(*args, **kwargs)
 
+    def get_from_main(self, *args, **kwargs):
+        return self.super_get(*args, **kwargs)
+        
     @contextmanager
     def getting(self, key, lock=False):
         if not lock:
@@ -104,15 +107,20 @@ class CacheopsRedis(SafeRedis):
             return locked
         """))
         signal_key = key + ':signal'
-
+        from_main = False
         while True:
-            data = self.get(key)
+            if from_main:
+                data = self.get_from_main(key)
+            else:
+                data = self.get(key)
             if data is None:
                 if self._lock(keys=[key, signal_key], args=[LOCK_TIMEOUT]):
                     return None
             elif data != b'LOCK':
                 return data
-
+            if not from_main:
+                from_main = True
+                continue
             # No data and not locked, wait
             self.brpoplpush(signal_key, signal_key, timeout=LOCK_TIMEOUT)
 
