@@ -10,7 +10,7 @@ from funcy import decorator, identity, memoize, LazyObject
 import redis
 from redis.sentinel import Sentinel
 from .conf import settings
-
+from rediscluster import StrictRedisCluster
 
 if settings.CACHEOPS_DEGRADE_ON_FAILURE:
     @decorator
@@ -24,12 +24,54 @@ if settings.CACHEOPS_DEGRADE_ON_FAILURE:
 else:
     handle_connection_failure = identity
 
-
 LOCK_TIMEOUT = 60
 
 
-class CacheopsRedis(redis.StrictRedis):
+class SafeRedisCluster(StrictRedisCluster):
+    get = handle_connection_failure(StrictRedisCluster.get)
+    """ Handles failover of AWS elasticache
+    """
+
+    def execute_command(self, *args, **options):
+        try:
+            return super(SafeRedisCluster, self).execute_command(*args, **options)
+        except redis.ResponseError as e:
+            if "READONLY" not in e.message:
+                raise
+            connection = self.connection_pool.get_connection(args[0], **options)
+            connection.disconnect()
+            warnings.warn("Primary probably failed over, reconnecting")
+            return super(SafeRedisCluster, self).execute_command(*args, **options)
+
+
+class SafeRedisNormal(redis.StrictRedis):
     get = handle_connection_failure(redis.StrictRedis.get)
+    """ Handles failover of AWS elasticache
+    """
+
+    def execute_command(self, *args, **options):
+        try:
+            return super(SafeRedisNormal, self).execute_command(*args, **options)
+        except redis.ResponseError as e:
+            if "READONLY" not in e.message:
+                raise
+            connection = self.connection_pool.get_connection(args[0], **options)
+            connection.disconnect()
+            warnings.warn("Primary probably failed over, reconnecting")
+            return super(SafeRedisNormal, self).execute_command(*args, **options)
+
+
+redis_conf = settings.CACHEOPS_REDIS
+if redis_conf and 'startup_nodes' not in redis_conf:
+    SafeRedis = SafeRedisNormal
+else:
+    SafeRedis = SafeRedisCluster
+
+class CacheopsRedis(SafeRedis):
+    super_get = handle_connection_failure(SafeRedis.get)
+
+    def get_from_main(self, *args, **kwargs):
+        return self.super_get(*args, **kwargs)
 
     @contextmanager
     def getting(self, key, lock=False):
@@ -55,7 +97,6 @@ class CacheopsRedis(redis.StrictRedis):
             return locked
         """))
         signal_key = key + ':signal'
-
         while True:
             data = self.get(key)
             if data is None:
@@ -64,7 +105,7 @@ class CacheopsRedis(redis.StrictRedis):
             elif data != b'LOCK':
                 return data
 
-            # No data and not locked, wait
+            # No data   and not locked, wait
             self.brpoplpush(signal_key, signal_key, timeout=LOCK_TIMEOUT)
 
     @handle_connection_failure
@@ -114,6 +155,7 @@ import re
 import os.path
 
 STRIP_RE = re.compile(r'TOSTRIP.*/TOSTRIP', re.S)
+
 
 @memoize
 def load_script(name, strip=False):

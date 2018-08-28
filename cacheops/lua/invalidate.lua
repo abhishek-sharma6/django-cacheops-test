@@ -42,6 +42,6 @@ if next(conj_keys) ~= nil then
     if next(cache_keys) ~= nil then
         -- NOTE: can't just do redis.call('del', unpack(...)) cause there is limit on number
         --       of return values in lua.
-        call_in_chunks('del', cache_keys)
+        call_in_chunks(conj_del_fn, cache_keys)
     end
 end
