@@ -19,12 +19,11 @@ from django.db.models.signals import pre_save, post_save, post_delete, m2m_chang
 from .conf import model_profile, settings, ALL_OPS
 from .utils import monkey_mix, stamp_fields, func_cache_key, cached_view_fab, family_has_profile
 from .sharding import get_prefix
-from .redis import redis_client, handle_connection_failure, load_script
+from .redis import redis_client, handle_connection_failure, load_script, hash_keys
 from .tree import dnfs
 from .invalidation import invalidate_obj, invalidate_dict, no_invalidation
 from .transaction import transaction_states
 from .signals import cache_read
-
 
 __all__ = ('cached_as', 'cached_view_as', 'install_cacheops')
 
@@ -95,9 +94,12 @@ def cached_as(*samples, **kwargs):
         def wrapper(*args, **kwargs):
             if not settings.CACHEOPS_ENABLED or transaction_states.is_dirty(dbs):
                 return func(*args, **kwargs)
-
-            prefix = get_prefix(func=func, _cond_dnfs=cond_dnfs, dbs=dbs)
-            cache_key = prefix + 'as:' + key_func(func, args, kwargs, key_extra)
+            hash_val = key_func(func, args, kwargs, key_extra)
+            if hash_keys:
+                prefix = hash_keys[hash(hash_val) % len(hash_keys)]
+            else:
+                prefix = get_prefix(func=func, _cond_dnfs=cond_dnfs, dbs=dbs)
+            cache_key = prefix + 'as:' + hash_val
 
             with redis_client.getting(cache_key, lock=lock) as cache_data:
                 cache_read.send(sender=None, func=func, hit=cache_data is not None)
@@ -109,6 +111,7 @@ def cached_as(*samples, **kwargs):
                     return result
 
         return wrapper
+
     return decorator
 
 
@@ -132,7 +135,7 @@ class QuerySetMixin(object):
                 'Cacheops is not enabled for %s.%s model.\n'
                 'If you don\'t want to cache anything by default '
                 'you can configure it with empty ops.'
-                    % (self.model._meta.app_label, self.model._meta.model_name))
+                % (self.model._meta.app_label, self.model._meta.model_name))
 
     def _cache_key(self, prefix=True):
         """
@@ -166,7 +169,10 @@ class QuerySetMixin(object):
             md.update(str(self.flat))
 
         cache_key = 'q:%s' % md.hexdigest()
-        return self._prefix + cache_key if prefix else cache_key
+        prefix_val = self._prefix
+        if prefix and hash_keys:
+            prefix_val = self.cluster_prefix
+        return prefix_val + cache_key if prefix else cache_key
 
     @cached_property
     def _prefix(self):
@@ -176,8 +182,15 @@ class QuerySetMixin(object):
     def _cond_dnfs(self):
         return dnfs(self)
 
+    @cached_property
+    def cluster_prefix(self):
+        prefix_val = self._prefix
+        if hash_keys:
+            prefix_val = hash_keys[hash(self._cache_key(prefix=False)) % len(hash_keys)]
+        return prefix_val
+
     def _cache_results(self, cache_key, results):
-        cache_thing(self._prefix, cache_key, results,
+        cache_thing(self.cluster_prefix, cache_key, results,
                     self._cond_dnfs, self._cacheprofile['timeout'], dbs=[self.db])
 
     def cache(self, ops=None, timeout=None, lock=None):
@@ -250,6 +263,7 @@ class QuerySetMixin(object):
                 def query_clone():
                     self.query.clone = original_query_clone
                     return self.query
+
                 self.query.clone = query_clone
                 return self.clone(klass, setup, **kwargs)
             else:
@@ -328,8 +342,8 @@ class QuerySetMixin(object):
             #       - ...
             # TODO: don't distinguish between pk, pk__exaxt, id, id__exact
             # TOOD: work with .filter(**kwargs).get() ?
-            if self._cacheprofile['local_get']        \
-                    and not args                      \
+            if self._cacheprofile['local_get'] \
+                    and not args \
                     and not self.query.select_related \
                     and not self.query.where.children:
                 # NOTE: We use simpler way to generate a cache key to cut costs.
@@ -402,8 +416,10 @@ def connect_first(signal, receiver, sender):
     signal.connect(receiver, sender=sender, weak=False)
     signal.receivers += old_receivers
 
+
 # We need to stash old object before Model.save() to invalidate on its properties
 _old_objs = threading.local()
+
 
 class ManagerMixin(object):
     @once_per('cls')
@@ -519,7 +535,7 @@ def invalidate_m2m(sender=None, instance=None, model=None, action=None, pk_set=N
     else:
         get_remote = lambda f: f.rel
     m2m = next(m2m for m2m in instance._meta.many_to_many + model._meta.many_to_many
-                   if get_remote(m2m).through == sender)
+               if get_remote(m2m).through == sender)
     instance_column, model_column = m2m.m2m_column_name(), m2m.m2m_reverse_name()
     if reverse:
         instance_column, model_column = model_column, instance_column
@@ -556,7 +572,7 @@ def install_cacheops():
             if not isinstance(model._default_manager, Manager):
                 raise ImproperlyConfigured("Can't install cacheops for %s.%s model:"
                                            " non-django model class or manager is used."
-                                            % (model._meta.app_label, model._meta.model_name))
+                                           % (model._meta.app_label, model._meta.model_name))
             model._default_manager._install_cacheops(model)
 
             # Bind m2m changed handlers
@@ -590,4 +606,5 @@ def install_cacheops():
 
         def Q__init__(self, *args, **kwargs):  # noqa
             super(Q, self).__init__(children=list(args) + list(sorted(kwargs.items())))
+
         Q.__init__ = Q__init__

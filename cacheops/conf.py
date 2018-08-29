@@ -14,6 +14,7 @@ ALL_OPS = {'get', 'fetch', 'count', 'aggregate', 'exists'}
 class Defaults(namespace):
     CACHEOPS_ENABLED = True
     CACHEOPS_REDIS = {}
+    CACHEOPS_USE_GEVENT = False
     CACHEOPS_DEFAULTS = {}
     CACHEOPS = {}
     CACHEOPS_PREFIX = lambda query: ''

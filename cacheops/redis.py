@@ -29,8 +29,6 @@ LOCK_TIMEOUT = 60
 
 class SafeRedisCluster(StrictRedisCluster):
     get = handle_connection_failure(StrictRedisCluster.get)
-    """ Handles failover of AWS elasticache
-    """
 
     def execute_command(self, *args, **options):
         try:
@@ -62,10 +60,31 @@ class SafeRedisNormal(redis.StrictRedis):
 
 
 redis_conf = settings.CACHEOPS_REDIS
-if redis_conf and 'startup_nodes' not in redis_conf:
-    SafeRedis = SafeRedisNormal
-else:
+if redis_conf and 'startup_nodes' in redis_conf:
     SafeRedis = SafeRedisCluster
+else:
+    SafeRedis = SafeRedisNormal
+
+
+def get_hash_keys():
+    if redis_conf and 'startup_nodes' in redis_conf:
+        from rediscluster.crc import crc16
+        from string import ascii_lowercase
+
+        nodes = len(redis_conf['startup_nodes'])
+        key = 16384 / nodes
+        ALL_HASH_SLOTS_PREFIX = {}
+        for c in ascii_lowercase:
+            if len(ALL_HASH_SLOTS_PREFIX) == nodes:
+                break
+            slot = crc16(c) % 16384
+            for i in range(0, nodes):
+                if slot < key * (i + 1):
+                    ALL_HASH_SLOTS_PREFIX[i] = '{%s}' % c
+                    break
+        return ALL_HASH_SLOTS_PREFIX
+    return None
+
 
 class CacheopsRedis(SafeRedis):
     super_get = handle_connection_failure(SafeRedis.get)
@@ -148,6 +167,9 @@ def redis_client():
     else:
         return client_class(**settings.CACHEOPS_REDIS)
 
+
+hash_keys = get_hash_keys()
+use_gevent = settings.CACHEOPS_USE_GEVENT
 
 ### Lua script loader
 
