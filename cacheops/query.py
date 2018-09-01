@@ -83,6 +83,9 @@ def cached_as(*samples, **kwargs):
     querysets = lmap(_get_queryset, samples)
     dbs = list({qs.db for qs in querysets})
     cond_dnfs = join_with(lcat, map(dnfs, querysets))
+    import json
+    if len(json.dump(cond_dnfs)) > 1024 * 1024:
+        raise Exception("Long cond_dnfs:" + json.dump(cond_dnfs))
     key_extra = [qs._cache_key(prefix=False) for qs in querysets]
     key_extra.append(extra)
     if timeout is None:
