@@ -47,6 +47,7 @@ def invalidate_dict(model, obj_dict, using=DEFAULT_DB_ALIAS):
                     model._meta.db_table,
                     json.dumps(obj_dict, default=str), script_timeout, max_invalidation
                 ])
+    else:
         load_script('invalidate', strip=redis_can_unlink())(keys=[prefix], args=[
             model._meta.db_table,
             json.dumps(obj_dict, default=str), script_timeout, max_invalidation
