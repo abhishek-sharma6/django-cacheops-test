@@ -9,7 +9,8 @@ from distutils.version import StrictVersion
 from .conf import settings
 from .utils import NOT_SERIALIZED_FIELDS
 from .sharding import get_prefix
-from .redis import redis_client, handle_connection_failure, load_script, hash_keys, use_gevent
+from .redis import redis_client, handle_connection_failure, load_script, hash_keys, use_gevent, max_invalidation, \
+    script_timeout
 from .signals import cache_invalidated
 from .transaction import queue_when_in_transaction
 
@@ -36,19 +37,19 @@ def invalidate_dict(model, obj_dict, using=DEFAULT_DB_ALIAS):
             jobs = [gevent.spawn(
                 lambda key: load_script('invalidate', strip=redis_can_unlink())(keys=[hash_keys[key]], args=[
                     model._meta.db_table,
-                    json.dumps(obj_dict, default=str)
+                    json.dumps(obj_dict, default=str),
+                    script_timeout, max_invalidation
                 ]), key) for key in hash_keys]
             gevent.wait(jobs)
         else:
             for key in hash_keys:
                 load_script('invalidate', strip=redis_can_unlink())(keys=[hash_keys[key]], args=[
                     model._meta.db_table,
-                    json.dumps(obj_dict, default=str)
+                    json.dumps(obj_dict, default=str), script_timeout, max_invalidation
                 ])
-    else:
         load_script('invalidate', strip=redis_can_unlink())(keys=[prefix], args=[
             model._meta.db_table,
-            json.dumps(obj_dict, default=str)
+            json.dumps(obj_dict, default=str), script_timeout, max_invalidation
         ])
     cache_invalidated.send(sender=model, obj_dict=obj_dict)
 

@@ -170,6 +170,8 @@ def redis_client():
 
 hash_keys = get_hash_keys()
 use_gevent = settings.CACHEOPS_USE_GEVENT
+script_timeout = 1000000
+max_invalidation = 100000
 
 ### Lua script loader
 

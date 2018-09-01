@@ -19,7 +19,7 @@ from django.db.models.signals import pre_save, post_save, post_delete, m2m_chang
 from .conf import model_profile, settings, ALL_OPS
 from .utils import monkey_mix, stamp_fields, func_cache_key, cached_view_fab, family_has_profile
 from .sharding import get_prefix
-from .redis import redis_client, handle_connection_failure, load_script, hash_keys
+from .redis import redis_client, handle_connection_failure, load_script, hash_keys, script_timeout
 from .tree import dnfs
 from .invalidation import invalidate_obj, invalidate_dict, no_invalidation
 from .transaction import transaction_states
@@ -43,7 +43,8 @@ def cache_thing(prefix, cache_key, data, cond_dnfs, timeout, dbs=()):
         args=[
             pickle.dumps(data, -1),
             json.dumps(cond_dnfs, default=str),
-            timeout
+            timeout,
+            script_timeout
         ]
     )
 
