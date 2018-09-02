@@ -83,6 +83,9 @@ def cached_as(*samples, **kwargs):
     querysets = lmap(_get_queryset, samples)
     dbs = list({qs.db for qs in querysets})
     cond_dnfs = join_with(lcat, map(dnfs, querysets))
+    import json
+    if len(json.dumps(cond_dnfs)) > 3 * 1024 * 1024:
+        raise Exception("Long cond_dnfs:" + json.dumps(cond_dnfs))
     key_extra = [qs._cache_key(prefix=False) for qs in querysets]
     key_extra.append(extra)
     if timeout is None:
@@ -191,6 +194,9 @@ class QuerySetMixin(object):
         return prefix_val
 
     def _cache_results(self, cache_key, results):
+        import json
+        if len(json.dumps(self._cond_dnfs)) > 3 * 1024 * 1024:
+            raise Exception("Long cond_dnfs:" + json.dumps(self._cond_dnfs))
         cache_thing(self.cluster_prefix, cache_key, results,
                     self._cond_dnfs, self._cacheprofile['timeout'], dbs=[self.db])
 
