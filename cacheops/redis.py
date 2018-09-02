@@ -29,6 +29,19 @@ LOCK_TIMEOUT = 60
 
 class SafeRedisCluster(StrictRedisCluster):
     get = handle_connection_failure(StrictRedisCluster.get)
+    _local_hash_key_cache = {}
+    _cluster_state = None
+
+    def __init__(self, *args, **kwargs):
+        super(SafeRedisCluster, self).__init__(*args, **kwargs)
+        self.build_local_hash_key_cache()
+
+    def get_hashed_key(self, cache_key):
+        if id(self.connection_pool.nodes.nodes) != self._cluster_state:
+            self.build_local_hash_key_cache()
+        node_name = self.connection_pool.nodes.node_from_slot(self.connection_pool.nodes.keyslot(hash(cache_key)))[
+            "name"]
+        return self._local_hash_key_cache[node_name]
 
     def execute_command(self, *args, **options):
         try:
@@ -40,6 +53,18 @@ class SafeRedisCluster(StrictRedisCluster):
             connection.disconnect()
             warnings.warn("Primary probably failed over, reconnecting")
             return super(SafeRedisCluster, self).execute_command(*args, **options)
+
+    def build_local_hash_key_cache(self):
+        hash_key = 0
+        master_nodes = list(
+            node for node in self.connection_pool.nodes.nodes.values() if node["server_type"] == "master")
+        while len(self._local_hash_key_cache) < len(master_nodes):
+            node = self.connection_pool.nodes.node_from_slot(
+                self.connection_pool.nodes.keyslot(str(hash_key)))
+            self._local_hash_key_cache[node["name"]] = "{%s}" % str(hash_key)
+            hash_key += 1
+
+        self._cluster_state = id(self.connection_pool.nodes.nodes)
 
 
 class SafeRedisNormal(redis.StrictRedis):
@@ -64,26 +89,6 @@ if redis_conf and 'startup_nodes' in redis_conf:
     SafeRedis = SafeRedisCluster
 else:
     SafeRedis = SafeRedisNormal
-
-
-def get_hash_keys():
-    if redis_conf and 'startup_nodes' in redis_conf:
-        from rediscluster.crc import crc16
-        from string import ascii_lowercase
-
-        nodes = len(redis_conf['startup_nodes'])
-        key = 16384 / nodes
-        ALL_HASH_SLOTS_PREFIX = {}
-        for c in ascii_lowercase:
-            if len(ALL_HASH_SLOTS_PREFIX) == nodes:
-                break
-            slot = crc16(c) % 16384
-            for i in range(0, nodes):
-                if slot < key * (i + 1):
-                    ALL_HASH_SLOTS_PREFIX[i] = '{%s}' % c
-                    break
-        return ALL_HASH_SLOTS_PREFIX
-    return None
 
 
 class CacheopsRedis(SafeRedis):
@@ -168,10 +173,10 @@ def redis_client():
         return client_class(**settings.CACHEOPS_REDIS)
 
 
-hash_keys = get_hash_keys()
+use_hash_keys = redis_conf and 'startup_nodes' in redis_conf
 use_gevent = settings.CACHEOPS_USE_GEVENT
-script_timeout = 1000000
-max_invalidation = 100000
+script_timeout = settings.CACHEOPS_SCRIPT_TIMEOUT
+max_invalidation = settings.CACHEOPS_MAX_INVALIDATION
 
 ### Lua script loader
 

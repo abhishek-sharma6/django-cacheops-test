@@ -7,7 +7,6 @@ from django.core.exceptions import ImproperlyConfigured
 from django.core.signals import setting_changed
 from django.utils.module_loading import import_string
 
-
 ALL_OPS = {'get', 'fetch', 'count', 'aggregate', 'exists'}
 
 
@@ -20,11 +19,13 @@ class Defaults(namespace):
     CACHEOPS_PREFIX = lambda query: ''
     CACHEOPS_LRU = False
     CACHEOPS_CLIENT_CLASS = None
+    CACHEOPS_SCRIPT_TIMEOUT = 2000000
+    CACHEOPS_MAX_INVALIDATION = 10000
     CACHEOPS_DEGRADE_ON_FAILURE = False
     CACHEOPS_SENTINEL = {}
 
     FILE_CACHE_DIR = '/tmp/cacheops_file_cache'
-    FILE_CACHE_TIMEOUT = 60*60*24*30
+    FILE_CACHE_TIMEOUT = 60 * 60 * 24 * 30
 
 
 class Settings(object):
@@ -35,6 +36,7 @@ class Settings(object):
         # Save to dict to speed up next access, __getattr__ won't be called
         self.__dict__[name] = res
         return res
+
 
 settings = Settings()
 setting_changed.connect(lambda setting, **kw: settings.__dict__.pop(setting, None), weak=False)

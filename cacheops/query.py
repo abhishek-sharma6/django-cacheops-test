@@ -19,7 +19,7 @@ from django.db.models.signals import pre_save, post_save, post_delete, m2m_chang
 from .conf import model_profile, settings, ALL_OPS
 from .utils import monkey_mix, stamp_fields, func_cache_key, cached_view_fab, family_has_profile
 from .sharding import get_prefix
-from .redis import redis_client, handle_connection_failure, load_script, hash_keys, script_timeout
+from .redis import redis_client, handle_connection_failure, load_script, use_hash_keys, script_timeout
 from .tree import dnfs
 from .invalidation import invalidate_obj, invalidate_dict, no_invalidation
 from .transaction import transaction_states
@@ -83,9 +83,6 @@ def cached_as(*samples, **kwargs):
     querysets = lmap(_get_queryset, samples)
     dbs = list({qs.db for qs in querysets})
     cond_dnfs = join_with(lcat, map(dnfs, querysets))
-    import json
-    if len(json.dumps(cond_dnfs)) > 1024 * 1024:
-        raise Exception("Long cond_dnfs:" + json.dumps(cond_dnfs))
     key_extra = [qs._cache_key(prefix=False) for qs in querysets]
     key_extra.append(extra)
     if timeout is None:
@@ -99,8 +96,8 @@ def cached_as(*samples, **kwargs):
             if not settings.CACHEOPS_ENABLED or transaction_states.is_dirty(dbs):
                 return func(*args, **kwargs)
             hash_val = key_func(func, args, kwargs, key_extra)
-            if hash_keys:
-                prefix = hash_keys[hash(hash_val) % len(hash_keys)]
+            if use_hash_keys:
+                prefix = redis_client.get_hashed_key(hash_val)
             else:
                 prefix = get_prefix(func=func, _cond_dnfs=cond_dnfs, dbs=dbs)
             cache_key = prefix + 'as:' + hash_val
@@ -174,7 +171,7 @@ class QuerySetMixin(object):
 
         cache_key = 'q:%s' % md.hexdigest()
         prefix_val = self._prefix
-        if prefix and hash_keys:
+        if prefix and use_hash_keys:
             prefix_val = self.cluster_prefix
         return prefix_val + cache_key if prefix else cache_key
 
@@ -189,8 +186,8 @@ class QuerySetMixin(object):
     @cached_property
     def cluster_prefix(self):
         prefix_val = self._prefix
-        if hash_keys:
-            prefix_val = hash_keys[hash(self._cache_key(prefix=False)) % len(hash_keys)]
+        if use_hash_keys:
+            prefix_val = redis_client.get_hashed_key(self._cache_key(prefix=False))
         return prefix_val
 
     def _cache_results(self, cache_key, results):

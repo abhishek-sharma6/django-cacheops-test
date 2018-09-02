@@ -9,7 +9,7 @@ from distutils.version import StrictVersion
 from .conf import settings
 from .utils import NOT_SERIALIZED_FIELDS
 from .sharding import get_prefix
-from .redis import redis_client, handle_connection_failure, load_script, hash_keys, use_gevent, max_invalidation, \
+from .redis import redis_client, handle_connection_failure, load_script, use_hash_keys, use_gevent, max_invalidation, \
     script_timeout
 from .signals import cache_invalidated
 from .transaction import queue_when_in_transaction
@@ -31,22 +31,25 @@ def invalidate_dict(model, obj_dict, using=DEFAULT_DB_ALIAS):
         return
     model = model._meta.concrete_model
     prefix = get_prefix(_cond_dnfs=[(model._meta.db_table, list(obj_dict.items()))], dbs=[using])
-    if hash_keys:
+    if use_hash_keys:
         if use_gevent:
             import gevent
             jobs = [gevent.spawn(
-                lambda key: load_script('invalidate', strip=redis_can_unlink())(keys=[hash_keys[key]], args=[
-                    model._meta.db_table,
-                    json.dumps(obj_dict, default=str),
-                    script_timeout, max_invalidation
-                ]), key) for key in hash_keys]
+                lambda key: load_script('invalidate', strip=redis_can_unlink())(
+                    keys=[redis_client._local_hash_key_cache[key]], args=[
+                        model._meta.db_table,
+                        json.dumps(obj_dict, default=str),
+                        script_timeout, max_invalidation
+                    ]), key) for key in redis_client._local_hash_key_cache]
             gevent.wait(jobs)
         else:
-            for key in hash_keys:
-                load_script('invalidate', strip=redis_can_unlink())(keys=[hash_keys[key]], args=[
-                    model._meta.db_table,
-                    json.dumps(obj_dict, default=str), script_timeout, max_invalidation
-                ])
+            for key in redis_client._local_hash_key_cache:
+                load_script('invalidate', strip=redis_can_unlink())(keys=[redis_client._local_hash_key_cache[key]],
+                                                                    args=[
+                                                                        model._meta.db_table,
+                                                                        json.dumps(obj_dict, default=str),
+                                                                        script_timeout, max_invalidation
+                                                                    ])
     else:
         load_script('invalidate', strip=redis_can_unlink())(keys=[prefix], args=[
             model._meta.db_table,
