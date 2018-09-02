@@ -39,7 +39,7 @@ for db_table, disj in pairs(dnfs) do
         -- Ensure scheme is known
         local current_time = redis.call('TIME')
         if current_time[1]*1000000+current_time[2]-st > script_timeout then
-                return re1dis.error_reply('timeout' .. current_time[1]*1000000+current_time[2]-st .. prefix .. key ..data)
+                return redis.error_reply('timeout' .. current_time[1]*1000000+current_time[2]-st .. prefix .. key ..data)
         end
         redis.call('sadd', prefix .. 'schemes:' .. db_table, conj_schema(conj))
 
