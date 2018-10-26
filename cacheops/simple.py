@@ -7,6 +7,7 @@ from funcy import wraps
 from .conf import settings
 from .utils import func_cache_key, cached_view_fab
 from .redis import redis_client, handle_connection_failure
+from cacheops.local_cache import CacheLocalObj
 
 
 __all__ = ('cache', 'cached', 'cached_view', 'file_cache', 'CacheMiss', 'FileCache', 'RedisCache')
@@ -36,6 +37,13 @@ class BaseCache(object):
     """
     Simple cache with time-based invalidation
     """
+
+    def get_value_ttl(self, cache_key):
+        pipeline = cache.conn.pipeline()
+        pipeline.get(cache_key)
+        pipeline.ttl(cache_key)
+        return pipeline.execute()
+
     def cached(self, timeout=None, extra=None, key_func=func_cache_key):
         """
         A decorator for caching function calls
@@ -52,7 +60,25 @@ class BaseCache(object):
 
                 cache_key = 'c:' + key_func(func, args, kwargs, extra)
                 try:
-                    result = self.get(cache_key)
+                    local_cache_obj = CacheLocalObj.get(cache_key)
+                    local_cache_result = None
+                    if local_cache_obj and CacheLocalObj.Expiry in local_cache_obj and CacheLocalObj.CachedData in local_cache_obj:
+                        expiry = int(local_cache_obj[CacheLocalObj.Expiry])
+                        now_epoch_time = int(time.time())
+                        if expiry == -1 or now_epoch_time < expiry:
+                            local_cache_result = local_cache_obj[CacheLocalObj.CachedData]
+                    if local_cache_result:
+                        result = pickle.loads(local_cache_result)
+                    else:
+                        data = self.get_value_ttl(cache_key)
+                        if len(data) == 2 and data[0]:
+                            temp_data = data[0]
+                            ttl = data[1]
+                            result = pickle.loads(temp_data)
+                            val = {CacheLocalObj.CachedData: temp_data, CacheLocalObj.Expiry: ttl + int(time.time())}
+                            CacheLocalObj.set(cache_key, val)
+                        else:
+                            raise CacheMiss
                 except CacheMiss:
                     result = func(*args, **kwargs)
                     self.set(cache_key, result, timeout)
@@ -93,12 +119,17 @@ class RedisCache(BaseCache):
         pickled_data = pickle.dumps(data, -1)
         if timeout is not None:
             self.conn.setex(cache_key, timeout, pickled_data)
+            val = {CacheLocalObj.CachedData: pickled_data, CacheLocalObj.Expiry: timeout + int(time.time())}
+            CacheLocalObj.set(cache_key, val)
         else:
             self.conn.set(cache_key, pickled_data)
+            val = {CacheLocalObj.CachedData: pickled_data, CacheLocalObj.Expiry: -1}
+            CacheLocalObj.set(cache_key, val)
 
     @handle_connection_failure
     def delete(self, cache_key):
         self.conn.delete(cache_key)
+        CacheLocalObj.delete_key(cache_key)
 
 cache = RedisCache(redis_client)
 cached = cache.cached
@@ -166,5 +197,6 @@ class FileCache(BaseCache):
             os.rmdir(dirname)
         except (IOError, OSError):
             pass
+
 
 file_cache = FileCache(settings.FILE_CACHE_DIR)
