@@ -123,7 +123,6 @@ def cached_as(*samples, **kwargs):
 
             _local_cached_data = RequestLocalCacheObj.get(cache_key)
             if _local_cached_data:
-                print "Local Cache Hit"
                 return _local_cached_data
             else:
                 with redis_client.getting(cache_key, lock=lock) as cache_data:
@@ -325,7 +324,6 @@ class QuerySetMixin(object):
 
         _local_cached_data = RequestLocalCacheObj.get(cache_key)
         if _local_cached_data:
-            print "Local Cache Hit"
             self._result_cache = _local_cached_data
         else:
             with redis_client.getting(cache_key, lock=lock) as cache_data:
