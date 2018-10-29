@@ -67,15 +67,17 @@ class BaseCache(object):
                         now_epoch_time = int(time.time())
                         if expiry == -1 or now_epoch_time < expiry:
                             local_cache_result = local_cache_obj[CacheLocalObj.CachedData]
+                        else:
+                            CacheLocalObj.delete_key(cache_key)
                     if local_cache_result:
-                        result = pickle.loads(local_cache_result)
+                        result = local_cache_result
                     else:
                         data = self.get_value_ttl(cache_key)
                         if len(data) == 2 and data[0]:
                             temp_data = data[0]
                             ttl = data[1]
                             result = pickle.loads(temp_data)
-                            val = {CacheLocalObj.CachedData: temp_data, CacheLocalObj.Expiry: ttl + int(time.time())}
+                            val = {CacheLocalObj.CachedData: result, CacheLocalObj.Expiry: ttl + int(time.time())}
                             CacheLocalObj.set(cache_key, val)
                         else:
                             raise CacheMiss
@@ -119,11 +121,11 @@ class RedisCache(BaseCache):
         pickled_data = pickle.dumps(data, -1)
         if timeout is not None:
             self.conn.setex(cache_key, timeout, pickled_data)
-            val = {CacheLocalObj.CachedData: pickled_data, CacheLocalObj.Expiry: timeout + int(time.time())}
+            val = {CacheLocalObj.CachedData: data, CacheLocalObj.Expiry: timeout + int(time.time())}
             CacheLocalObj.set(cache_key, val)
         else:
             self.conn.set(cache_key, pickled_data)
-            val = {CacheLocalObj.CachedData: pickled_data, CacheLocalObj.Expiry: -1}
+            val = {CacheLocalObj.CachedData: data, CacheLocalObj.Expiry: -1}
             CacheLocalObj.set(cache_key, val)
 
     @handle_connection_failure

@@ -1,5 +1,8 @@
 
 class CacheLocal(object):
+    """
+        The caching is for process level
+    """
     local_cache = {}
     CachedData = 'cached_data'
     Expiry = 'expiry'
