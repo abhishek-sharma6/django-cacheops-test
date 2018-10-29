@@ -13,6 +13,7 @@ from .redis import redis_client, handle_connection_failure, load_script, use_has
     script_timeout
 from .signals import cache_invalidated
 from .transaction import queue_when_in_transaction
+from .local_cache import RequestLocalCacheObj
 
 __all__ = ('invalidate_obj', 'invalidate_model', 'invalidate_all', 'no_invalidation')
 
@@ -29,6 +30,7 @@ def redis_can_unlink():
 def invalidate_dict(model, obj_dict, using=DEFAULT_DB_ALIAS):
     if no_invalidation.active or not settings.CACHEOPS_ENABLED:
         return
+    RequestLocalCacheObj.invalidate()
     model = model._meta.concrete_model
     prefix = get_prefix(_cond_dnfs=[(model._meta.db_table, list(obj_dict.items()))], dbs=[using])
     if use_hash_keys:

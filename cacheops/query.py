@@ -24,6 +24,7 @@ from .tree import dnfs
 from .invalidation import invalidate_obj, invalidate_dict, no_invalidation
 from .transaction import transaction_states
 from .signals import cache_read
+from .local_cache import RequestLocalCacheObj
 
 __all__ = ('cached_as', 'cached_view_as', 'install_cacheops')
 
@@ -81,6 +82,21 @@ def cached_as(*samples, **kwargs):
         return queryset
 
     querysets = lmap(_get_queryset, samples)
+
+    db_table_name = None
+    sample = samples[0]
+    if isinstance(sample, Model):
+        db_table_name = sample._meta.db_table
+    elif isinstance(sample, type) and issubclass(sample, Model):
+        db_table_name = sample._meta.db_table
+    else:
+        db_table_name = sample.model._meta.db_table
+
+    _cache_locally = False
+    if db_table_name and RequestLocalCacheObj.cache_model(
+            db_table_name) and RequestLocalCacheObj.METHOD == RequestLocalCacheObj.GET:
+        _cache_locally = True
+
     dbs = list({qs.db for qs in querysets})
     cond_dnfs = join_with(lcat, map(dnfs, querysets))
     import json
@@ -105,14 +121,23 @@ def cached_as(*samples, **kwargs):
                 prefix = get_prefix(func=func, _cond_dnfs=cond_dnfs, dbs=dbs)
             cache_key = prefix + 'as:' + hash_val
 
-            with redis_client.getting(cache_key, lock=lock) as cache_data:
-                cache_read.send(sender=None, func=func, hit=cache_data is not None)
-                if cache_data is not None:
-                    return pickle.loads(cache_data)
-                else:
-                    result = func(*args, **kwargs)
-                    cache_thing(prefix, cache_key, result, cond_dnfs, timeout, dbs=dbs)
-                    return result
+            _local_cached_data = RequestLocalCacheObj.get(cache_key)
+            if _local_cached_data:
+                return _local_cached_data
+            else:
+                with redis_client.getting(cache_key, lock=lock) as cache_data:
+                    cache_read.send(sender=None, func=func, hit=cache_data is not None)
+                    if cache_data is not None:
+                        _data = pickle.loads(cache_data)
+                        if _cache_locally:
+                            RequestLocalCacheObj.set(cache_key, _data)
+                        return _data
+                    else:
+                        result = func(*args, **kwargs)
+                        if _cache_locally:
+                            RequestLocalCacheObj.set(cache_key, result)
+                        cache_thing(prefix, cache_key, result, cond_dnfs, timeout, dbs=dbs)
+                        return result
 
         return wrapper
 
@@ -297,20 +322,31 @@ class QuerySetMixin(object):
         cache_key = self._cache_key()
         lock = self._cacheprofile['lock']
 
-        with redis_client.getting(cache_key, lock=lock) as cache_data:
-            cache_read.send(sender=self.model, func=None, hit=cache_data is not None)
-            if cache_data is not None:
-                self._result_cache = pickle.loads(cache_data)
-            else:
-                # This thing appears in Django 1.9.
-                # In Djangos 1.9 and 1.10 both calls mean the same.
-                # Starting from Django 1.11 .iterator() uses chunked fetch
-                # while ._fetch_all() stays with bare _iterable_class.
-                if hasattr(self, '_iterable_class'):
-                    self._result_cache = list(self._iterable_class(self))
+        _local_cached_data = RequestLocalCacheObj.get(cache_key)
+        if _local_cached_data:
+            self._result_cache = _local_cached_data
+        else:
+            with redis_client.getting(cache_key, lock=lock) as cache_data:
+                cache_read.send(sender=self.model, func=None, hit=cache_data is not None)
+                if cache_data is not None:
+                    _data = pickle.loads(cache_data)
+                    if RequestLocalCacheObj.cache_model(
+                            self.model._meta.db_table) and RequestLocalCacheObj.METHOD == RequestLocalCacheObj.GET:
+                        RequestLocalCacheObj.set(cache_key, _data)
+                    self._result_cache = _data
                 else:
-                    self._result_cache = list(self.iterator())
-                self._cache_results(cache_key, self._result_cache)
+                    # This thing appears in Django 1.9.
+                    # In Djangos 1.9 and 1.10 both calls mean the same.
+                    # Starting from Django 1.11 .iterator() uses chunked fetch
+                    # while ._fetch_all() stays with bare _iterable_class.
+                    if hasattr(self, '_iterable_class'):
+                        self._result_cache = list(self._iterable_class(self))
+                    else:
+                        self._result_cache = list(self.iterator())
+                    if RequestLocalCacheObj.cache_model(
+                            self.model._meta.db_table) and RequestLocalCacheObj.METHOD == RequestLocalCacheObj.GET:
+                        RequestLocalCacheObj.set(cache_key, self._result_cache)
+                    self._cache_results(cache_key, self._result_cache)
 
         return self._no_monkey._fetch_all(self)
 

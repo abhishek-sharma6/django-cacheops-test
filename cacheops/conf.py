@@ -16,6 +16,7 @@ class Defaults(namespace):
     CACHEOPS_USE_GEVENT = False
     CACHEOPS_DEFAULTS = {}
     CACHEOPS = {}
+    CACHEOPS_LOCAL_CACHE_EXCLUDE_MODELS = []
     CACHEOPS_PREFIX = lambda query: ''
     CACHEOPS_LRU = False
     CACHEOPS_CLIENT_CLASS = None
