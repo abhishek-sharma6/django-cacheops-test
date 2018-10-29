@@ -10,7 +10,7 @@ README = open('README.rst').read()    \
 
 setup(
     name='django-cacheops',
-    version='4.1.6',
+    version='4.1.7',
     author='Alexander Schepanovski',
     author_email='suor.web@gmail.com',
 
