@@ -94,7 +94,7 @@ def cached_as(*samples, **kwargs):
 
     _cache_locally = False
     if db_table_name and RequestLocalCacheObj.cache_model(
-            db_table_name) and RequestLocalCacheObj.METHOD == RequestLocalCacheObj.GET:
+            db_table_name) and RequestLocalCacheObj.is_get_request():
         _cache_locally = True
 
     dbs = list({qs.db for qs in querysets})
@@ -331,7 +331,7 @@ class QuerySetMixin(object):
                 if cache_data is not None:
                     _data = pickle.loads(cache_data)
                     if RequestLocalCacheObj.cache_model(
-                            self.model._meta.db_table) and RequestLocalCacheObj.METHOD == RequestLocalCacheObj.GET:
+                            self.model._meta.db_table) and RequestLocalCacheObj.is_get_request():
                         RequestLocalCacheObj.set(cache_key, _data)
                     self._result_cache = _data
                 else:
@@ -344,7 +344,7 @@ class QuerySetMixin(object):
                     else:
                         self._result_cache = list(self.iterator())
                     if RequestLocalCacheObj.cache_model(
-                            self.model._meta.db_table) and RequestLocalCacheObj.METHOD == RequestLocalCacheObj.GET:
+                            self.model._meta.db_table) and RequestLocalCacheObj.is_get_request():
                         RequestLocalCacheObj.set(cache_key, self._result_cache)
                     self._cache_results(cache_key, self._result_cache)
 

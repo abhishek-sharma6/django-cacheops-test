@@ -1,4 +1,4 @@
-from django.core.signals import request_started, request_finished
+from django.core.signals import request_started
 import re
 
 from cacheops.conf import settings
@@ -51,10 +51,10 @@ class RequestLocalCache(object):
     """
     request_local = None
     key = 'cached_query'
-    METHOD = "POST"
     GET = "GET"  # THIS WE ARE USING TO CACHE ONLY FOR GET METHODS
+    POST = "POST"
     Regex_exclude_models = settings.CACHEOPS_LOCAL_CACHE_EXCLUDE_MODELS
-    CACHE = False  # kind of trigger to cache or not; for celery there wont be any request so we don't wanna cache
+    METHOD = "METHOD"  # the method for every request is stored in request_local with the name METHOD
 
     def __init__(self):
         if self.Regex_exclude_models:
@@ -63,8 +63,6 @@ class RequestLocalCache(object):
             self.combined_regex = ""
 
     def get_local(self):
-        if not self._cache():
-            return
         if not self.request_local or not hasattr(self.request_local, self.key):
             from _threading_local import local
 
@@ -80,12 +78,10 @@ class RequestLocalCache(object):
         return self.request_local
 
     def clear(self):
-        if not self._cache():
-            return
         setattr(self.get_local(), self.key, {})
 
     def set(self, key, val):
-        if not self._cache():
+        if not self.is_get_request():
             return
         cached_query = getattr(self.get_local(), self.key, None)
         if not cached_query:
@@ -94,10 +90,10 @@ class RequestLocalCache(object):
         setattr(self.get_local(), self.key, cached_query)
 
     def get(self, key):
-        if not self._cache():
-            return
+        if not self.is_get_request():
+            return None
         # we want to cache only for GET methods
-        if self.METHOD != self.GET:
+        if not self.is_get_request():
             return None
         cached_query = getattr(self.get_local(), self.key, None)
         if not cached_query or key not in cached_query:
@@ -105,39 +101,32 @@ class RequestLocalCache(object):
         return cached_query[key]
 
     def invalidate(self):
-        if not self._cache():
+        if not self.is_get_request():
             return
-        setattr(self.request_local, self.key, {})
+        setattr(self.get_local(), self.key, {})
 
     def cache_model(self, db_table_name):
-        if not self._cache():
-            return
+        if not self.is_get_request():
+            return False
         if self.combined_regex and re.match(self.combined_regex, db_table_name):
             return False
         return True
 
-    def _cache(self):
-        return self.CACHE
+    def set_request_related_varibles(self, method=POST):
+        setattr(self.get_local(), self.METHOD, method)
+
+    def is_get_request(self):
+        method = getattr(self.get_local(), self.METHOD, self.POST)
+        return method == self.GET
 
 
 RequestLocalCacheObj = RequestLocalCache()
 
 
 def on_request_start(sender, environ, **kwargs):
+    RequestLocalCacheObj.clear()
     method = environ.get("REQUEST_METHOD", None)
-    RequestLocalCacheObj.METHOD = method
-    if method:
-        RequestLocalCacheObj.CACHE = True
-    else:
-        RequestLocalCacheObj.CACHE = False
-    RequestLocalCacheObj.clear()
-
-
-def on_request_finish():
-    RequestLocalCacheObj.clear()
-    RequestLocalCacheObj.CACHE = False
-    RequestLocalCacheObj.METHOD = None
+    RequestLocalCacheObj.set_request_related_varibles(method=method)
 
 
 request_started.connect(on_request_start)
-request_finished.connect(on_request_finish)
