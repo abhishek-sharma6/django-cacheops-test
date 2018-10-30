@@ -124,13 +124,13 @@ RequestLocalCacheObj = RequestLocalCache()
 
 
 def on_request_start(sender, environ, **kwargs):
-    RequestLocalCacheObj.clear()
     method = environ.get("REQUEST_METHOD", None)
     RequestLocalCacheObj.METHOD = method
     if method:
         RequestLocalCacheObj.CACHE = True
     else:
         RequestLocalCacheObj.CACHE = False
+    RequestLocalCacheObj.clear()
 
 
 def on_request_finish():
