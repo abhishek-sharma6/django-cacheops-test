@@ -76,7 +76,14 @@ class BaseCache(object):
                         if len(data) == 2 and data[0]:
                             temp_data = data[0]
                             ttl = data[1]
-                            result = pickle.loads(temp_data)
+                            try:
+                                result = pickle.loads(temp_data)
+                            except Exception:
+                                from django.conf import settings as base_settings
+                                from raven import Client
+                                client = Client(base_settings.SENTRY_DNS)
+                                client.captureException()
+                                raise CacheMiss
                             val = {CacheLocalObj.CachedData: result, CacheLocalObj.Expiry: ttl + int(time.time())}
                             CacheLocalObj.set(cache_key, val)
                         else:
