@@ -338,12 +338,13 @@ class QuerySetMixin(object):
                         self._result_cache = _data
                         cache_data_not_found = False
                     except Exception as e:
-                        from django.conf import settings as base_settings
                         print e.message
-                        from raven import Client
-                        client = Client(base_settings.SENTRY_DNS)
-                        client.captureException()
-                elif cache_data_not_found:
+                        # from django.conf import settings as base_settings
+                        #
+                        # from raven import Client
+                        # client = Client(base_settings.SENTRY_DNS)
+                        # client.captureException()
+                if cache_data_not_found:
                     # This thing appears in Django 1.9.
                     # In Djangos 1.9 and 1.10 both calls mean the same.
                     # Starting from Django 1.11 .iterator() uses chunked fetch
