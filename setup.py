@@ -10,7 +10,7 @@ README = open('README.rst').read()    \
 
 setup(
     name='django-cacheops',
-    version='4.1.7',
+    version='4.1.8',
     author='Alexander Schepanovski',
     author_email='suor.web@gmail.com',
 
@@ -30,6 +30,7 @@ setup(
         'redis>=2.9.1',
         'funcy>=1.8,<2.0',
         'six>=1.4.0',
+        'raven==6.4.0',
     ],
     classifiers=[
         'Development Status :: 5 - Production/Stable',

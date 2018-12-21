@@ -328,13 +328,21 @@ class QuerySetMixin(object):
         else:
             with redis_client.getting(cache_key, lock=lock) as cache_data:
                 cache_read.send(sender=self.model, func=None, hit=cache_data is not None)
+                cache_data_not_found = True
                 if cache_data is not None:
-                    _data = pickle.loads(cache_data)
-                    if RequestLocalCacheObj.cache_model(
-                            self.model._meta.db_table) and RequestLocalCacheObj.is_get_request():
-                        RequestLocalCacheObj.set(cache_key, _data)
-                    self._result_cache = _data
-                else:
+                    try:
+                        _data = pickle.loads(cache_data)
+                        if RequestLocalCacheObj.cache_model(
+                                self.model._meta.db_table) and RequestLocalCacheObj.is_get_request():
+                            RequestLocalCacheObj.set(cache_key, _data)
+                        self._result_cache = _data
+                        cache_data_not_found = False
+                    except Exception as e:
+                        print e.message
+                        from raven import Client
+                        client = Client(settings.SENTRY_DNS)
+                        client.captureException()
+                elif cache_data_not_found:
                     # This thing appears in Django 1.9.
                     # In Djangos 1.9 and 1.10 both calls mean the same.
                     # Starting from Django 1.11 .iterator() uses chunked fetch
