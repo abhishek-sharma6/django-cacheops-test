@@ -124,9 +124,10 @@ RequestLocalCacheObj = RequestLocalCache()
 
 
 def on_request_start(sender, environ, **kwargs):
-    RequestLocalCacheObj.clear()
-    method = environ.get("REQUEST_METHOD", None)
-    RequestLocalCacheObj.set_request_related_varibles(method=method)
+    pass
+    # RequestLocalCacheObj.clear()
+    # method = environ.get("REQUEST_METHOD", None)
+    # RequestLocalCacheObj.set_request_related_varibles(method=method)
 
 
 request_started.connect(on_request_start)
