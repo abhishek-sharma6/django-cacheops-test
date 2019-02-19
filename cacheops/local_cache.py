@@ -1,5 +1,6 @@
 from django.core.signals import request_started
 import re
+from .cross import pickle
 
 from cacheops.conf import settings
 
@@ -31,12 +32,11 @@ class CacheLocal(object):
         self.local_cache = {}
 
     def set(self, key, val):
-        self.local_cache[key] = val
+        self.local_cache[key] = pickle.dumps(val, -1)
 
     def get(self, key):
-        if key in self.local_cache:
-            return self.local_cache[key]
-        return None
+        data = self.local_cache.get(key)
+        return pickle.loads(data) if data else None
 
     def delete_key(self, key):
         return self.local_cache.pop(key, None)
