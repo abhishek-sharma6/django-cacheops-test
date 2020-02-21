@@ -187,7 +187,7 @@ class QuerySetMixin(object):
         except EmptyResultSet:
             pass
         # If query results differ depending on database
-        if self._cacheprofile and self.db not in ['default', 'analytics']:
+        if self.db and self.db not in ['default', 'analytics']:
             md.update(self.db)
         # Thing only appeared in Django 1.9
         it_class = getattr(self, '_iterable_class', None)
