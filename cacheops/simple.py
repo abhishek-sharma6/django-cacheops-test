@@ -55,7 +55,7 @@ class BaseCache(object):
         def decorator(func):
             @wraps(func)
             def wrapper(*args, **kwargs):
-                if not settings.CACHEOPS_ENABLED:
+                if not settings.CACHEOPS_ENABLED or kwargs.get("un_ignore_cache"):
                     return func(*args, **kwargs)
 
                 cache_key = 'c:' + key_func(func, args, kwargs, extra)
