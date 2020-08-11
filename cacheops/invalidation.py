@@ -14,9 +14,14 @@ from .redis import redis_client, handle_connection_failure, load_script, use_has
 from .signals import cache_invalidated
 from .transaction import queue_when_in_transaction
 from .local_cache import RequestLocalCacheObj
+import logging
+from datetime import datetime
+import pytz
 
 __all__ = ('invalidate_obj', 'invalidate_model', 'invalidate_all', 'no_invalidation')
 
+
+redis_logger = logging.getLogger('redis.log')
 
 @memoize
 def redis_can_unlink():
@@ -28,36 +33,40 @@ def redis_can_unlink():
 @queue_when_in_transaction
 @handle_connection_failure
 def invalidate_dict(model, obj_dict, using=DEFAULT_DB_ALIAS):
-    if no_invalidation.active or not settings.CACHEOPS_ENABLED:
-        return
-    RequestLocalCacheObj.invalidate()
-    model = model._meta.concrete_model
-    prefix = get_prefix(_cond_dnfs=[(model._meta.db_table, list(obj_dict.items()))], dbs=[using])
-    if use_hash_keys:
-        if use_gevent:
-            import gevent
-            jobs = [gevent.spawn(
-                lambda key: load_script('invalidate', strip=redis_can_unlink())(
-                    keys=[redis_client._local_hash_key_cache[key]], args=[
-                        model._meta.db_table,
-                        json.dumps(obj_dict, default=str),
-                        script_timeout, max_invalidation
-                    ]), key) for key in redis_client._local_hash_key_cache]
-            gevent.wait(jobs)
+    try:
+        if no_invalidation.active or not settings.CACHEOPS_ENABLED:
+            return
+        RequestLocalCacheObj.invalidate()
+        model = model._meta.concrete_model
+        prefix = get_prefix(_cond_dnfs=[(model._meta.db_table, list(obj_dict.items()))], dbs=[using])
+        if use_hash_keys:
+            if use_gevent:
+                import gevent
+                jobs = [gevent.spawn(
+                    lambda key: load_script('invalidate', strip=redis_can_unlink())(
+                        keys=[redis_client._local_hash_key_cache[key]], args=[
+                            model._meta.db_table,
+                            json.dumps(obj_dict, default=str),
+                            script_timeout, max_invalidation
+                        ]), key) for key in redis_client._local_hash_key_cache]
+                gevent.wait(jobs)
+            else:
+                for key in redis_client._local_hash_key_cache:
+                    load_script('invalidate', strip=redis_can_unlink())(keys=[redis_client._local_hash_key_cache[key]],
+                                                                        args=[
+                                                                            model._meta.db_table,
+                                                                            json.dumps(obj_dict, default=str),
+                                                                            script_timeout, max_invalidation
+                                                                        ])
         else:
-            for key in redis_client._local_hash_key_cache:
-                load_script('invalidate', strip=redis_can_unlink())(keys=[redis_client._local_hash_key_cache[key]],
-                                                                    args=[
-                                                                        model._meta.db_table,
-                                                                        json.dumps(obj_dict, default=str),
-                                                                        script_timeout, max_invalidation
-                                                                    ])
-    else:
-        load_script('invalidate', strip=redis_can_unlink())(keys=[prefix], args=[
-            model._meta.db_table,
-            json.dumps(obj_dict, default=str), script_timeout, max_invalidation
-        ])
-    cache_invalidated.send(sender=model, obj_dict=obj_dict)
+            load_script('invalidate', strip=redis_can_unlink())(keys=[prefix], args=[
+                model._meta.db_table,
+                json.dumps(obj_dict, default=str), script_timeout, max_invalidation
+            ])
+        cache_invalidated.send(sender=model, obj_dict=obj_dict)
+    except Exception as e:
+        redis_logger.info({"time": datetime.utcnow().replace(tzinfo=pytz.UTC), "error": e})
+        raise e
 
 
 def invalidate_obj(obj, using=DEFAULT_DB_ALIAS):
