@@ -21,8 +21,6 @@ import pytz
 __all__ = ('invalidate_obj', 'invalidate_model', 'invalidate_all', 'no_invalidation')
 
 
-redis_logger = logging.getLogger('redis.log')
-
 @memoize
 def redis_can_unlink():
     # TODO please fix
@@ -65,7 +63,9 @@ def invalidate_dict(model, obj_dict, using=DEFAULT_DB_ALIAS):
             ])
         cache_invalidated.send(sender=model, obj_dict=obj_dict)
     except Exception as e:
-        redis_logger.info({"time": datetime.utcnow().replace(tzinfo=pytz.UTC), "error": e})
+        if settings.REDIS_LOGGING:
+            redis_logger = logging.getLogger('redis.log')
+            redis_logger.info({"time": datetime.utcnow().replace(tzinfo=pytz.UTC), "error": e})
         raise e
 
 
