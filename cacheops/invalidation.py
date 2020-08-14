@@ -63,9 +63,9 @@ def invalidate_dict(model, obj_dict, using=DEFAULT_DB_ALIAS):
             ])
         cache_invalidated.send(sender=model, obj_dict=obj_dict)
     except Exception as e:
-        if settings.REDIS_LOGGING:
-            redis_logger = logging.getLogger('redis.log')
-            redis_logger.info({"time": datetime.utcnow().replace(tzinfo=pytz.UTC), "error": e})
+        if settings.CACHEOPS_LOGGING:
+            cacheops_logger = logging.getLogger('cacheops.log')
+            cacheops_logger.info({"time": datetime.utcnow().replace(tzinfo=pytz.UTC), "error": e})
         raise e
 
 
