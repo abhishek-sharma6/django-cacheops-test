@@ -24,7 +24,7 @@ class Defaults(namespace):
     CACHEOPS_MAX_INVALIDATION = 10000
     CACHEOPS_DEGRADE_ON_FAILURE = False
     CACHEOPS_SENTINEL = {}
-
+    CACHEOPS_LOGGING = False
     FILE_CACHE_DIR = '/tmp/cacheops_file_cache'
     FILE_CACHE_TIMEOUT = 60 * 60 * 24 * 30
 
