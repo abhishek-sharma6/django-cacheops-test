@@ -338,7 +338,7 @@ class QuerySetMixin(object):
                         self._result_cache = _data
                         cache_data_not_found = False
                     except Exception as e:
-                        print e.message
+                        print(e.message)
                         # from django.conf import settings as base_settings
                         #
                         # from raven import Client
