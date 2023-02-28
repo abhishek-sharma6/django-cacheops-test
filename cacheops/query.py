@@ -13,7 +13,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import DEFAULT_DB_ALIAS
 from django.db.models import Manager, Model
 from django.db.models.query import QuerySet
-from django.db.models.sql.datastructures import EmptyResultSet
+from django.core.exceptions import EmptyResultSet
 from django.db.models.signals import pre_save, post_save, post_delete, m2m_changed
 
 from .conf import model_profile, settings, ALL_OPS
