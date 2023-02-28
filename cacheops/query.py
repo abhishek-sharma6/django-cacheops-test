@@ -8,7 +8,7 @@ from funcy.py3 import lmap, map, lcat, join_with
 from .cross import pickle, md5
 
 import django
-from django.utils.encoding import smart_str, force_text
+from django.utils.encoding import smart_str, force_str
 from django.core.exceptions import ImproperlyConfigured
 from django.db import DEFAULT_DB_ALIAS
 from django.db.models import Manager, Model
@@ -182,7 +182,7 @@ class QuerySetMixin(object):
             try:
                 sql_str = sql % params
             except UnicodeDecodeError:
-                sql_str = sql % walk(force_text, params)
+                sql_str = sql % walk(force_str, params)
             md.update(smart_str(sql_str))
         except EmptyResultSet:
             pass
