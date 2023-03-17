@@ -58,9 +58,14 @@ class SafeRedisCluster(StrictRedisCluster):
         hash_key = 0
         master_nodes = list(
             node for node in self.connection_pool.nodes.nodes.values() if node["server_type"] == "master")
+        print("connectinpool nodes:  ,", self.connection_pool.nodes)
+        print("connectinpool nodes nodes:  ,", self.connection_pool.nodes.nodes)
+        print("connectinpool nodes nodes values:  ,", self.connection_pool.nodes.nodes.values)
+        print("master nodes: ", master_nodes)
         while len(self._local_hash_key_cache) < len(master_nodes):
             node = self.connection_pool.nodes.node_from_slot(
                 self.connection_pool.nodes.keyslot(str(hash_key)))
+            print("node: " , node)
             self._local_hash_key_cache[node["name"]] = "{%s}" % str(hash_key)
             hash_key += 1
 
